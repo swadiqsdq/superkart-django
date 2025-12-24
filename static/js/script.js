@@ -55,6 +55,11 @@ $(document).ready(function() {
 
 
     
-}); 
+});
 // jquery end
+
+// setTimeout(function () {
+//     $('#messege').fadeOut('slow');
+// }, 4000);
+
 
