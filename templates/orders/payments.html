@@ -113,8 +113,46 @@
 <!-- ============================ COMPONENT 1 END .// ================================= -->
 
 </div> <!-- container .//  -->
+    <!-- Loading overlay -->
+<div id="loading-overlay" style="
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255,255,255,0.8);
+    z-index: 9999;
+    text-align: center;">
+    <div style="
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);">
+        <div class="spinner"></div>
+        <p>Loading...</p>
+    </div>
+</div>
+
 </section>
 <!-- ========================= SECTION CONTENT END// ========================= -->
+<style>
+/* CSS spinner */
+.spinner {
+  border: 8px solid #f3f3f3; /* Light grey */
+  border-top: 8px solid #3498db; /* Blue */
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 10px auto;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+</style>
 <script>
     // using jQuery
     function getCookie(name) {
@@ -147,6 +185,10 @@
                 label:  'pay',
                 height: 40
             },
+            onClick: function(data, actions) {
+                // Show loading overlay immediately when user clicks the PayPal button
+                document.getElementById('loading-overlay').style.display = 'block';
+            },
             createOrder: function (data, actions) {
                 return actions.order.create({
                     purchase_units: [{
@@ -176,14 +218,21 @@
                         })
                         .then((response) =>response.json())
                         .then(data => {
+                            document.getElementById('loading-overlay').style.display = 'block';
                             window.location.href = redirect_url + '?order_number='+data.order_number+'&payment_id='+data.transID;
                         });
                     }
                 });
             },
+            onCancel: function (data) {
+                // Hide spinner if user cancels payment
+                document.getElementById('loading-overlay').style.display = 'none';
+            },
             onError: function (err) {
                 console.error(err);
                 alert('PayPal error');
+                // Hide spinner if error occurs
+                document.getElementById('loading-overlay').style.display = 'none';
             }
         }).render('#paypal-button-container');
     </script>

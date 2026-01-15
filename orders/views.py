@@ -12,6 +12,21 @@ from .models import Order,Payment,OrderProduct
 from django.template.loader import render_to_string
 from django.core.mail import EmailMessage
 
+# // pdf
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
+from reportlab.platypus import (SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer, Image)
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_RIGHT
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from io import BytesIO
+
+from django.conf import settings
+import os
+
+
 # Create your views here.
 def place_order(request,total=0,quantity=0):
     current_user = request.user
@@ -155,3 +170,136 @@ def order_complete(request):
         return render(request,'orders/order_complete.html',context)
     except (Payment.DoesNotExist,Order.DoesNotExist):
         return redirect('home')
+
+def invoice_pdf(request, order_number):
+    order = get_object_or_404(Order, order_number=order_number)
+    items = OrderProduct.objects.filter(order=order)
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=40,
+        leftMargin=40,
+        topMargin=40,
+        bottomMargin=40
+    )
+
+    styles = getSampleStyleSheet()
+    elements = []
+
+    # -------- LOGO + INVOICE INFO --------
+    logo_path = os.path.join(settings.STATIC_ROOT, 'images/logo.png')
+
+    if os.path.exists(logo_path):
+        logo = Image(logo_path, width=120, height=40)
+    else:
+        logo = Paragraph("<b>GreatKart</b>", styles['Title'])
+
+    # -------- BILL TO --------
+
+    # Create a right-aligned style
+    right_aligned_style = ParagraphStyle(
+        name='RightAligned',
+        parent=styles['Normal'],
+        alignment=TA_RIGHT
+    )
+    bill_to = Paragraph(
+        f"""
+            <b>Invoiced To:</b><br/>
+            {order.first_name + " " + order.last_name}<br/>
+            {order.address_line_1}<br/>
+            {order.city}, {order.state}<br/>
+            {order.country}
+            """,
+        right_aligned_style
+    )
+
+    header_table = Table(
+        [[logo, bill_to]],
+        colWidths=[300, 200]
+    )
+
+    elements.append(header_table)
+    elements.append(Spacer(1, 20))
+
+    invoice_info = Paragraph(
+        f"""
+            <b>Order:</b> {order.order_number}<br/>
+            <b>Transaction:</b> {order.payment.payment_id}<br/>
+            <b>Date:</b> {order.created_at.strftime('%b %d, %Y')}<br/>
+            <b>Status:</b> COMPLETED
+            """,
+        styles['Normal']
+    )
+
+    elements.append(invoice_info)
+    elements.append(Spacer(1, 20))
+
+    # -------- PRODUCTS TABLE --------
+    table_data = [['Products', 'Qty', 'Total']]
+    subtotal = 0
+
+    for item in items:
+        line_total = item.quantity * item.product_price
+        subtotal += line_total
+
+        product_name = f"""
+        <b>{item.product.product_name}</b><br/>
+        Color: {item.variation.first().variation_value if item.variation.exists() else '-'}<br/>
+        Size: {item.variation.last().variation_value if item.variation.exists() else '-'}
+        """
+
+        table_data.append([
+            Paragraph(product_name, styles['Normal']),
+            item.quantity,
+            f"${line_total:.2f} USD"
+        ])
+
+    table = Table(table_data, colWidths=[300, 80, 100])
+    table.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 1, colors.lightgrey),
+        ('BACKGROUND', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (1,1), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+
+    elements.append(table)
+    elements.append(Spacer(1, 20))
+
+    # -------- TOTALS --------
+    totals_data = [
+        ['', 'Sub Total:', f"${subtotal:.2f} USD"],
+        ['', 'Tax:', f"${order.tax:.2f} USD"],
+        ['', 'Grand Total:', f"${order.order_total:.2f} USD"],
+    ]
+
+    totals_table = Table(totals_data, colWidths=[300, 80, 100])
+    totals_table.setStyle(TableStyle([
+        ('ALIGN', (1,0), (-1,-1), 'RIGHT'),
+        ('FONT', (1,-1), (-1,-1), 'Helvetica-Bold'),
+    ]))
+
+    elements.append(totals_table)
+    elements.append(Spacer(1, 30))
+
+    # -------- FOOTER --------
+    footer = Paragraph(
+        "Thank you for shopping with us!",
+        ParagraphStyle(
+            name='Footer',
+            alignment=TA_RIGHT,
+            fontSize=10,
+            textColor=colors.grey
+        )
+    )
+
+    elements.append(footer)
+
+    doc.build(elements)
+    buffer.seek(0)
+
+    response = HttpResponse(buffer, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="Superkart_Invoice_{order.order_number}.pdf"'
+    return response
+

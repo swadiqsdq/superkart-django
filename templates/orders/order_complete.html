@@ -8,6 +8,9 @@
 	<br>
 	<div class="text-center">
 		<a href="{% url 'store' %}" class="btn btn-success">Shop more</a>
+        {% if payment.status == 'COMPLETED'%}
+            <a href="{% url 'invoice_pdf' order.order_number %}" class="btn btn-success">Download Invoice</a>
+        {% endif %}
 	</div>
 </div>
 
